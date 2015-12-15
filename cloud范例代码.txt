@@ -1,0 +1,47 @@
+
+----------获取DynamicObjectCollection start-------------
+ string strSql = string.Format("select top 1 FUnitId_CMK,FPrice_CMK from CMK_LS_BarCode where FMATERIALID = {0} and FCODETYPE_CMK = 0 and FVIPCARDLEVEL_CMK = 0", ((DynamicObject)this.Model.GetValue("FMaterialId", e.Row))["Id"]);
+                        DynamicObjectCollection docMaterial = DBUtils.ExecuteDynamicObject(this.Context, strSql, null, null, System.Data.CommandType.Text, null);
+                        if (docMaterial != null && docMaterial.Count > 0)
+----------获取DynamicObjectCollection end-------------
+
+----------获取DynamicObject start-------------
+ DynamicObject doMaterial = this.Model.GetValue("FMaterialId") as DynamicObject;
+----------获取DynamicObject end-------------
+
+-----------实体对象清空，并从数据库中取数赋值到界面来     ---start------
+Entity cardEntity = this.View.BusinessInfo.GetEntity("FVIPCardEntry");
+DynamicObjectCollection cardDataObject = this.View.Model.GetEntityDataObject(cardEntity);
+cardDataObject.Clear();
+
+ paremeter = new QueryBuilderParemeter()
+            {
+                FormId = "CMK_VIP_CardInfo",
+                FilterClauseWihtKey = "FVIPMemberID = @FVIPID",
+                SelectItems = SelectorItemInfo.CreateItems("FCardID, FNumber,FAccountID, FValue"),
+            };
+            var cardInfoItems = QueryServiceHelper.GetDynamicObjectCollection(this.Context, paremeter, new List<SqlParam>() {
+                new SqlParam("@FVIPID", KDDbType.Int64, VipID)
+            });
+            foreach (var dataRow in cardInfoItems)
+            {
+                CreateCardNewRow(cardEntity, cardDataObject, dataRow);
+                CreateAccountNewRow(accountEntity, accountDataObject, dataRow);                
+            }
+
+            string Sql = string.Format(@"SELECT t1.FBillNo, t1.FCHANNELID, t1.FCARDID, t1.FACCOUNTID, t1.FOPTION, t1.FOPERVALUE, t1.FBALANCE, t1.FBIZTYPE, t1.FRECORDDATETIME, t1.FBIZDATE 
+	            FROM CMK_VIP_T_CardAction t1 INNER JOIN CMK_T_VIP_CARD t2 ON t1.FCARDID = t2.FCardID 
+                    WHERE  t1.FOperationType = '03' AND t2.FVIPMEMBERID = {0} ", VipID);
+            var consumeInfoItems = DBUtils.ExecuteDynamicObject(this.Context, Sql);
+            foreach (var flowData in consumeInfoItems)
+            {
+                CreateConsumeNewRow(consumeEntity, consumeDataObject, flowData);
+            }
+
+
+this.View.UpdateView("FVIPCardEntry");
+
+
+
+-----------实体对象清空，并从数据库中取数赋值到界面来     ---end------
+

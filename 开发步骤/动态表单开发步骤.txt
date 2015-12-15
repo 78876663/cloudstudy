@@ -1,0 +1,78 @@
+1.bos画界面,表单插件指定2
+2..net中新增继承AbstractDynamicFormPlugIn的class
+3. 插件类主要实现两个方法:AfterBindData(用于取数据库数据)和ButtonClick(用于保存数据)
+4.cloud以admin登陆，增加权限对象
+5.boside发布到主控台-->维护-->权限项(新增)
+6.boside->编辑->权限控制设置->关联对应的权限对象
+7.cloud 中给业务对象授权-->选择角色-->勾选相关权限(要登陆150的app)
+
+4.插件代码范例如下:
+ public class CMK_VIP_MCRWConfig : AbstractDynamicFormPlugIn
+    {
+        public override void AfterBindData(EventArgs e)
+        {
+            string strSql = "Select FPORTNAME,FBAUDRATE,FDATABITS,FPARITY,FSTOPBITS FROM CMK_T_VIP_MCRWConfig WHERE FIPADDRESS=@FIPADDRESS";
+            string strIPAddr = this.Context.IpAddress;//获取本机的ip
+            if (strIPAddr.IndexOf("(") > 0)
+            {
+                strIPAddr = strIPAddr.Substring(0, strIPAddr.IndexOf("("));
+            }
+
+            SqlParam[] sqlParams = new SqlParam[] { new SqlParam("@FIPADDRESS", KDDbType.String, strIPAddr) };
+            DynamicObjectCollection doConfigs = DBServiceHelper.ExecuteDynamicObject(this.Context, strSql, null, null, System.Data.CommandType.Text, sqlParams);
+            if (doConfigs == null || doConfigs.Count <= 0)
+            {
+                return;
+            }
+            DynamicObject doConfig = doConfigs.FirstOrDefault();
+            this.Model.SetValue("FPortName", doConfig["FPORTNAME"]);
+            this.Model.SetValue("FBaudRate", doConfig["FBAUDRATE"]);
+            this.Model.SetValue("FDataBits", doConfig["FDATABITS"]);
+            this.Model.SetValue("FParity", doConfig["FPARITY"]);
+            this.Model.SetValue("FStopBits", doConfig["FSTOPBITS"]);
+            this.View.UpdateView("FPortName");
+            this.View.UpdateView("FBaudRate");
+            this.View.UpdateView("FDataBits");
+            this.View.UpdateView("FParity");
+            this.View.UpdateView("FStopBits");
+        }
+
+        public override void ButtonClick(Kingdee.BOS.Core.DynamicForm.PlugIn.Args.ButtonClickEventArgs e)
+        {
+            if (e.Key.EqualsIgnoreCase("FBtnOk"))
+            {
+                string strIPAddr = this.Context.IpAddress;
+                if (strIPAddr.IndexOf("(") > 0)
+                {
+                    strIPAddr = strIPAddr.Substring(0, strIPAddr.IndexOf("("));
+                }
+
+                string strSql = "DELETE CMK_T_VIP_MCRWConfig WHERE FIPADDRESS=@FIPADDRESS";
+                List<SqlParam> lstSqlParams = new List<SqlParam>();
+                lstSqlParams.Add(new SqlParam("@FIPADDRESS", KDDbType.String, strIPAddr));
+                DBServiceHelper.Execute(this.Context, strSql, lstSqlParams);
+                string strPortName = Convert.ToString(this.Model.GetValue("FPortName"));
+                string strBaudRate = Convert.ToString(this.Model.GetValue("FBaudRate"));
+                string strDataBits = Convert.ToString(this.Model.GetValue("FDataBits"));
+                string strParity = Convert.ToString(this.Model.GetValue("FParity"));
+                string strStopBits = Convert.ToString(this.Model.GetValue("FStopBits"));
+                strSql = "INSERT INTO CMK_T_VIP_MCRWConfig(FIPADDRESS,FPORTNAME,FBAUDRATE,FDATABITS,FPARITY,FSTOPBITS) VALUES(@FIPADDRESS,@FPORTNAME,@FBAUDRATE,@FDATABITS,@FPARITY,@FSTOPBITS)";
+                lstSqlParams.Clear();
+                lstSqlParams.Add(new SqlParam("@FIPADDRESS", KDDbType.String, strIPAddr));
+                lstSqlParams.Add(new SqlParam("@FPORTNAME", KDDbType.String, strPortName));
+                lstSqlParams.Add(new SqlParam("@FBAUDRATE", KDDbType.String, strBaudRate));
+                lstSqlParams.Add(new SqlParam("@FDATABITS", KDDbType.String, strDataBits));
+                lstSqlParams.Add(new SqlParam("@FPARITY", KDDbType.String, strParity));
+                lstSqlParams.Add(new SqlParam("@FSTOPBITS", KDDbType.String, strStopBits));
+                DBServiceHelper.Execute(this.Context, strSql, lstSqlParams);
+                Dictionary<string,string> dctConfig = new Dictionary<string,string>();
+                dctConfig.Add("FPortName", strPortName);
+                dctConfig.Add("FBaudRate", strBaudRate);
+                dctConfig.Add("FDataBits", strDataBits);
+                dctConfig.Add("FParity", strParity);
+                dctConfig.Add("FStopBits", strStopBits);
+                this.View.ReturnToParentWindow(new FormResult(dctConfig));
+            }
+            this.View.Close();
+        }
+    }

@@ -1,0 +1,57 @@
+using Kingdee.BOS.Core.Bill.PlugIn;
+using Kingdee.BOS.Core.DynamicForm;
+using Kingdee.BOS.Orm.DataEntity;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
+using System.Text;
+
+namespace CMK.K3.RI.VIP.Business.PlugIn.CardInfo
+{
+    [Description("xx编辑客户端插件")]
+    public class CMK_Edit : AbstractBillPlugIn
+    {
+        public override void BeforeDoOperation(Kingdee.BOS.Core.DynamicForm.PlugIn.Args.BeforeDoOperationEventArgs e)
+        {
+            switch (e.Operation.FormOperation.Operation.ToLower())
+            {
+                case "modifyconsumpwd":
+                    this.ShowChangePWDForm();
+                    break;
+                default:
+                    break;
+            }
+        }
+        
+        private void ShowChangePWDForm()
+        {
+            this.View.StartNetworkCtrl();
+            DynamicFormShowParameter showParam = new DynamicFormShowParameter();
+            showParam.FormId = "CMK_VIP_ModifyConsumPWD";
+            showParam.PageId = Guid.NewGuid().ToString();
+            showParam.ParentPageId = this.View.PageId;
+            showParam.OpenStyle.ShowType = ShowType.Modal;
+            showParam.CustomParams.Add("FCardID", this.View.Model.GetPKValue().ToString());
+            this.View.ShowForm(showParam, ret =>
+            {
+                if (ret.ReturnData != null)
+                {
+                    DynamicObject doAction = ret.ReturnData as DynamicObject;
+                    if (doAction != null)
+                    {
+                        this.Model.SetValue("FConsumByPWD", doAction["FConsumByPWD"]);
+                        this.View.UpdateView("FConsumByPWD");
+                        if (Convert.ToBoolean(doAction["FConsumByPWD"]))
+                        {
+                            this.Model.SetValue("FConsumePassword", doAction["FConsumePassword"]);
+                            this.View.UpdateView("FConsumePassword");
+                        }
+                        this.View.ShowNotificationMessage(string.Format("卡资料[{0}]修改消费密码成功!", this.Model.GetValue("FNumber")));
+                    }
+                }
+                this.View.CommitNetworkCtrl();
+            });
+        }
+    }
+}

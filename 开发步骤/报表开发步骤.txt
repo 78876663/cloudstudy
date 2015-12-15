@@ -1,0 +1,18 @@
+1.bos ide中新建过滤条件框界面（填写唯一标识，名称，标题，子系统,表单插件设置成第2项生成的dll）
+控件类型分为:	a.基础资料:在基础资料类型属性选择对应项
+		b.下拉菜单:FCardLevelID 在枚举类型属性选择对应的列表,
+增加显示隐藏列页签内容：所有字段对应第2步中的插件字段ID,采用文本类型就可以了
+增加分组汇总页签内容：所有字段对应第2步中的插件字段ID,采用文本类型就可以了
+
+2..net新建过滤条件框对应的插件class(放入reportfilter或rptfilter目录，在business工程中)
+3.bos ide 中新建简单帐表(填写唯一标识，名称，标题，子系统，过滤窗口对象(设置第1项的标识),服务器插件设置成第4项生成的dll),报表界面元素采用文本类型（主要用于显示过滤条件）。
+4..net新建简单帐表对应的服务插件(放入app.service工程中的report目录)
+5.发布,参见业务对象发布流程
+
+
+4中的简单帐表成插件代码范例如下：
+集成的方法执行顺序如下
+a.BuilderReportSqlAndTempTable
+b.ReportHeader GetReportHeaders(Kingdee.BOS.Core.Report.IRptParams filter)//设置报表头名称
+c.ReportTitles GetReportTitles(IRptParams filter) //设置显示的报表条件内容
+d.List<SummaryField> GetSummaryColumnInfo(IRptParams filter)//设置合计行

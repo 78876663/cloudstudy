@@ -1,0 +1,181 @@
+using Kingdee.BOS;
+using Kingdee.BOS.App.Data;
+using Kingdee.BOS.Contracts;
+using Kingdee.BOS.Contracts.Report;
+using Kingdee.BOS.Core.Report;
+using Kingdee.BOS.Orm.DataEntity;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
+using System.Text;
+
+namespace CMK.K3.RI.VIP.App.Service.PlugIn.Report
+{
+    [Description("商品预定与领取报表")]
+    public class CMK_VIP_MaterialReserveReceiveRpt : SysReportBaseService
+    {
+        public override void Initialize()
+        {
+            base.Initialize();
+            this.ReportProperty.IsGroupSummary = true;
+        }
+
+        public override ReportHeader GetReportHeaders(Kingdee.BOS.Core.Report.IRptParams filter)
+        {
+            ReportHeader header = base.GetReportHeaders(filter);
+            header.AddChild("FSaleOrgName", new LocaleValue("销售门店"), SqlStorageType.Sqlvarchar);
+            header.AddChild("FMaterialName", new LocaleValue("商品名称"), SqlStorageType.Sqlvarchar);
+            header.AddChild("FQTY", new LocaleValue("预定数量"), SqlStorageType.SqlInt);
+            header.AddChild("FSALEQTY", new LocaleValue("领取数量"), SqlStorageType.SqlInt);
+            header.AddChild("FBalanceFQty", new LocaleValue("结存"), SqlStorageType.SqlInt);
+            header.AddChild("FDepositDate", new LocaleValue("预定日期"), SqlStorageType.Sqlvarchar);
+            header.AddChild("FReceiveDate", new LocaleValue("领取日期"), SqlStorageType.Sqlvarchar);
+            return header;
+        }
+
+        public override ReportTitles GetReportTitles(IRptParams filter)
+        {
+            ReportTitles titles = new ReportTitles();
+            if (filter.FilterParameter.CustomFilter["FSaleOrgId"] != null)
+            {
+                string strSaleOrgName = ((DynamicObject)(filter.FilterParameter.CustomFilter["FSaleOrgId"]))["Name"].ToString();
+                if (string.IsNullOrWhiteSpace(strSaleOrgName))
+                {
+                    titles.AddTitle("FSaleOrgName", "");
+                }
+                else
+                {
+                    titles.AddTitle("FSaleOrgName", strSaleOrgName);
+                }
+            }
+
+            if (filter.FilterParameter.CustomFilter["FMaterialID"] != null)
+            {
+                string strMaterialName = ((DynamicObject)(filter.FilterParameter.CustomFilter["FMaterialID"]))["Name"].ToString();
+                if (string.IsNullOrWhiteSpace(strMaterialName))
+                {
+                    titles.AddTitle("FMaterialName", "");
+                }
+                else
+                {
+                    titles.AddTitle("FMaterialName", strMaterialName);
+                }
+            }
+
+            string strTitle = string.Empty;
+            if (filter.FilterParameter.CustomFilter["FBeginDate"] != null)
+            {
+                strTitle = string.Format("{0} - ", Convert.ToDateTime(filter.FilterParameter.CustomFilter["FBeginDate"]).ToString("yyyy-MM-dd"));
+            }
+            if (filter.FilterParameter.CustomFilter["FEndDate"] != null)
+            {
+                if (string.IsNullOrWhiteSpace(strTitle))
+                {
+                    strTitle = string.Format(" - {0}", Convert.ToDateTime(filter.FilterParameter.CustomFilter["FEndDate"]).ToString("yyyy-MM-dd"));
+                }
+                else
+                {
+                    strTitle = string.Format("{0}{1}", strTitle, Convert.ToDateTime(filter.FilterParameter.CustomFilter["FEndDate"]).ToString("yyyy-MM-dd"));
+                }
+            }
+            titles.AddTitle("FDate", strTitle);
+            if (filter.FilterParameter.CustomFilter["FOneMonth"] != null)
+            {
+                bool FOneMonth = Convert.ToBoolean(filter.FilterParameter.CustomFilter["FOneMonth"]);
+                if (FOneMonth)
+                {
+                    titles.AddTitle("FOneMonth", "True");
+                }
+                else
+                {
+                    titles.AddTitle("FOneMonth", "False");
+                }
+            }
+
+            return titles;
+        }
+
+        public override void BuilderReportSqlAndTempTable(Kingdee.BOS.Core.Report.IRptParams filter, string tableName)
+        {
+            base.BuilderReportSqlAndTempTable(filter, tableName);
+            string strFilter = this.GetFilter(filter);
+            this.SetReportData(tableName, strFilter);
+        }
+
+        private void SetReportData(string strRptTable, string strFilter)
+        {
+            StringBuilder sbSql = new StringBuilder();
+            base.KSQL_SEQ = string.Format("ROW_NUMBER() OVER(ORDER BY {0} ) FIDENTITYID", " FDepositDate ASC");
+            sbSql.AppendLine(string.Format("select FSaleOrgName,FSALORGID,FMaterialName,FMATERIALID,SUM(FQTY) as FQTY,SUM(FSALEQTY) as FSALEQTY,SUM(FQTY)-SUM(FSALEQTY) as FBalanceFQty,FDepositDate,FReceiveDate,{0} into {1} from (", base.KSQL_SEQ, strRptTable));
+            sbSql.AppendLine("select t4.FNAME as FSaleOrgName,t1.FSALORGID,t3.FNAME as FMaterialName,t2.FMATERIALID,t2.FQTY,t2.FSALEQTY,t1.FDATE as FDepositDate,");
+            sbSql.AppendLine("(select top 1 Retail.FDATE from CMK_LS_Retail Retail");
+            sbSql.AppendLine(" inner join CMK_LS_RetailEntry RetailEntry on RetailEntry.FID = Retail.FID");
+            sbSql.AppendLine(" where RetailEntry.FSOURCEBILLNO = t1.FBILLNO and RetailEntry.FSOURCEBILLTYPE = t1.FFormId and RetailEntry.FMATERIALID = t2.FMATERIALID) as FReceiveDate from CMK_LS_DepositBill t1");
+            sbSql.AppendLine(" inner join CMK_LS_DepositBillEntry t2 on t1.FID = t2.FID");
+            sbSql.AppendLine(" inner join T_BD_MATERIAL_L t3 on t3.FMATERIALID = t2.FMATERIALID");
+            sbSql.AppendLine(" inner join T_ORG_ORGANIZATIONS_L t4 on t4.FORGID = t1.FSALORGID");
+            sbSql.AppendLine(string.Format(" where t1.FSALEOPTION <> -1 and t1.FBILLNO not in (select FRETURNSALENO from CMK_LS_DepositBill where FSALEOPTION = -1)) t {0} group by FSaleOrgName,FSALORGID,FMaterialName,FMATERIALID,FDepositDate,FReceiveDate", string.IsNullOrEmpty(strFilter) ? "" : " where " + strFilter));
+            
+            DBUtils.Execute(this.Context, sbSql.ToString());
+        }
+
+        private string GetFilter(Kingdee.BOS.Core.Report.IRptParams filter)
+        {
+            StringBuilder sbFilter = new StringBuilder();
+
+            if (filter.FilterParameter.CustomFilter["FSaleOrgId"] != null)
+            {
+                if (sbFilter.Length > 0)
+                {
+                    sbFilter.Append(" and ");
+                }
+                sbFilter.AppendFormat("t.FSALORGID = {0}", ((DynamicObject)filter.FilterParameter.CustomFilter["FSaleOrgId"])["Id"]);
+            }
+
+            if (filter.FilterParameter.CustomFilter["FMaterialID"] != null)
+            {
+                if (sbFilter.Length > 0)
+                {
+                    sbFilter.Append(" and ");
+                }
+                sbFilter.AppendFormat("t.FMaterialID = {0}", ((DynamicObject)filter.FilterParameter.CustomFilter["FMaterialID"])["Id"]);
+            }
+            bool FOneMonth = false;
+            if (filter.FilterParameter.CustomFilter["FOneMonth"] != null)
+            {
+                FOneMonth = Convert.ToBoolean(filter.FilterParameter.CustomFilter["FOneMonth"]);
+            }
+            if (FOneMonth)
+            {
+                if (sbFilter.Length > 0)
+                {
+                    sbFilter.Append(" and ");
+                }
+                DateTime dtCurrent = ServiceFactory.GetTimeService(this.Context).GetSystemDateTime(this.Context);
+                sbFilter.AppendFormat("t.FDepositDate >= TO_DATE('{0}') and t.FDepositDate < TO_DATE('{1}')", dtCurrent.AddMonths(-1).ToShortDateString(), dtCurrent.ToShortDateString());
+            }
+            else
+            {
+                if (filter.FilterParameter.CustomFilter["FBeginDate"] != null)
+                {
+                    if (sbFilter.Length > 0)
+                    {
+                        sbFilter.Append(" and ");
+                    }
+                    sbFilter.AppendFormat("t.FDepositDate >= TO_DATE('{0}')", Convert.ToDateTime(filter.FilterParameter.CustomFilter["FBeginDate"]).ToShortDateString());
+                }
+
+                if (filter.FilterParameter.CustomFilter["FEndDate"] != null)
+                {
+                    if (sbFilter.Length > 0)
+                    {
+                        sbFilter.Append(" and ");
+                    }
+                    sbFilter.AppendFormat("t.FDepositDate < TO_DATE('{0}')", Convert.ToDateTime(filter.FilterParameter.CustomFilter["FEndDate"]).AddDays(1).ToShortDateString());
+                }
+            }
+            return sbFilter.ToString();
+        }
+    }
+}

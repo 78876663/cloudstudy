@@ -1,0 +1,96 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.ComponentModel;
+using Kingdee.BOS.Core.CommonFilter.PlugIn;
+using Kingdee.BOS.Core.DynamicForm.PlugIn.Args;
+using Kingdee.BOS.Core.DynamicForm;
+using Kingdee.BOS.Core.SqlBuilder;
+using Kingdee.BOS.Core.Metadata;
+using Kingdee.BOS;
+using Kingdee.BOS.Core.Permission;
+using Kingdee.BOS.Util;
+using Kingdee.BOS.Core.DynamicForm.PlugIn.ControlModel;
+using Kingdee.BOS.ServiceHelper;
+using Kingdee.BOS.Orm.DataEntity;
+
+namespace CMK.K3.RI.VIP.Business.PlugIn.RptFilter
+{
+    [Description("卡金额进销存查询过滤")]
+    public class CMK_VIP_CardAmtInventryFilter : AbstractCommonFilterPlugIn
+    {
+        //private List<long> lstSalOrg;
+        //private string saleOrgId;
+
+        public override void TreeNodeClick(TreeNodeArgs e)
+        {
+            base.TreeNodeClick(e);
+            this.InitSalOrgId();
+        }
+
+        public override void ButtonClick(ButtonClickEventArgs e)
+        {
+            base.ButtonClick(e);
+            string str;
+            if (((str = e.Key.ToUpperInvariant()) != null) && (str == "FBTNOK"))
+            {
+                e.Cancel = CheckValidator(e);
+            }
+        }
+
+        private bool CheckValidator(ButtonClickEventArgs e)
+        {
+            bool flag = false;
+            StringBuilder builder = new StringBuilder();
+            //日期
+            var startDate = this.View.Model.GetValue("FDateFrom");
+            var endDate = this.View.Model.GetValue("FDateTo");
+            if (startDate != null && endDate != null)
+            {
+                if (Convert.ToDateTime(startDate).CompareTo(Convert.ToDateTime(endDate)) > 0)
+                {
+                    builder.AppendLine("起始日期大于结束日期！");
+                }
+            }
+            if (builder.ToString().Trim().Length > 0)
+            {
+                flag = true;
+                this.View.ShowErrMessage(builder.ToString(), "过滤条件格式错误！", MessageBoxType.Advise);
+            }
+            return flag;
+        }
+
+      
+
+        private string GetInFilter(string key, List<long> valist)
+        {
+            if ((valist != null) && !valist.IsEmpty<long>())
+            {
+                return string.Format("{0} in ({1})", key, string.Join<long>(",", valist));
+            }
+            return string.Format("{0}=-1", key);
+        }
+    }
+
+        private void InitSalOrgId()
+	//初始化销售组织，有销售组织的，才需要该函数
+        {
+            if (this.View.ParentFormView != null)
+            {
+                this.lstSalOrg = this.GetPermissionOrg(this.View.ParentFormView.BillBusinessInfo.GetForm().Id);
+            }
+            List<EnumItem> organization = this.GetOrganization(this.View.Context);
+            this.View.GetFieldEditor<ComboFieldEditor>("FSaleOrgList", 0).SetComboItems(organization);
+
+            //获取具有销售职能的组织
+            if (this.Model.GetValue("FSaleOrgList").IsNullOrEmpty() && this.Context.CurrentOrganizationInfo.FunctionIds.Contains(101L))
+            {
+                this.Model.SetValue("FSaleOrgList", this.Context.CurrentOrganizationInfo.ID);                
+            }
+            else
+            {
+                this.View.Model.SetValue("FSaleOrgList", organization.FirstOrDefault().Value);
+            }
+        }
+}

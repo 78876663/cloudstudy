@@ -1,0 +1,406 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.ComponentModel;
+using Kingdee.BOS.Contracts.Report;
+using Kingdee.BOS.Contracts;
+using Kingdee.BOS.App.Data;
+using Kingdee.BOS.Core.Report;
+using Kingdee.BOS.Orm.DataEntity;
+using Kingdee.BOS;
+using Kingdee.BOS.Core.SqlBuilder;
+using Kingdee.BOS.Core.Metadata;
+using Kingdee.BOS.Core.Enums;
+
+namespace CMK.K3.RI.VIP.App.Service.PlugIn.Report
+{
+    [Description("卡金额进销存查询")]//added by ajun ,报表描述
+    public class CMK_VIP_CardAmtInvertoryRpt : SysReportBaseService
+    {
+        private string filterDateFrom;
+        private string filterDateTo;
+        //private string filterSaleOrgList;
+        private string filterCardType;
+        private string filterAccountType;
+
+        public override void BuilderReportSqlAndTempTable(Kingdee.BOS.Core.Report.IRptParams filter, string tableName)
+        {
+            base.BuilderReportSqlAndTempTable(filter, tableName);
+            this.SetFilter(filter);
+            string sqlWhere = this.GetFilter();
+            string sqlQCWhere = this.GetQCFilter();
+            IDBService dbSvr = Kingdee.BOS.Contracts.ServiceFactory.GetDBService(this.Context);
+            string[] tmpTableNames = dbSvr.CreateTemporaryTableName(this.Context, 3);
+            BuildTmpData(tmpTableNames[0]);
+            this.BuildSencondData(tmpTableNames[1], sqlWhere);
+            this.BuildFinalData(tmpTableNames[2], tmpTableNames[0], tmpTableNames[1], sqlQCWhere);
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine(string.Format("Select * into {0} from ", tableName));
+            builder.AppendLine("(");
+            builder.AppendLine(string.Format(@"Select FDateBusiness, FStartMoney, FMakeCardMoney, FSaleCardMoney,FMoneyin,FModifyMoney,FConsumeMoney,FTranMoney,FBackCardMoney,FOtherMoney,FEndMoney,"));
+            builder.AppendFormat(this.KSQL_SEQ = this.KSQL_SEQ, "FDateBusiness");
+            builder.AppendLine(string.Format(" from {0} ",tmpTableNames[2]));
+            builder.AppendLine(" )");
+            builder.Append(" t ");
+
+            DBUtils.ExecuteDynamicObject(this.Context, builder.ToString());
+
+            //dbSvr.DeleteTemporaryTableName(this.Context, tmpTableNames);
+        }
+        /// <summary>
+        /// 售卡金额、充值金额、调整金额、消费金额，积分返利金额、退卡金额、其他金额
+        /// </summary>
+        /// <param name="filter"></param>
+        /// <returns></returns>
+        public override List<SummaryField> GetSummaryColumnInfo(IRptParams filter)
+        {
+            List<SummaryField> summarys = new List<SummaryField>();
+            //summarys.Add(new SummaryField("FMakeCardMoney", BOSEnums.Enu_SummaryType.SUM));
+            summarys.Add(new SummaryField("FSaleCardMoney", BOSEnums.Enu_SummaryType.SUM));
+            summarys.Add(new SummaryField("FMoneyin", BOSEnums.Enu_SummaryType.SUM));
+            summarys.Add(new SummaryField("FModifyMoney", BOSEnums.Enu_SummaryType.SUM));
+            summarys.Add(new SummaryField("FConsumeMoney", BOSEnums.Enu_SummaryType.SUM));
+            summarys.Add(new SummaryField("FTranMoney", BOSEnums.Enu_SummaryType.SUM));
+            summarys.Add(new SummaryField("FBackCardMoney", BOSEnums.Enu_SummaryType.SUM));
+            summarys.Add(new SummaryField("FOtherMoney", BOSEnums.Enu_SummaryType.SUM));
+            return summarys;
+        }
+        public override ReportHeader GetReportHeaders(IRptParams filter)
+        {//added by ajun ,设置报表表头
+            ReportHeader header = new ReportHeader();
+            header.AddChild("FDateBusiness", new LocaleValue("业务日期"), SqlStorageType.Sqlvarchar);
+            header.AddChild("FStartMoney", new Kingdee.BOS.LocaleValue("期初金额"), SqlStorageType.SqlDecimal);
+            header.AddChild("FMakeCardMoney", new LocaleValue("未发行金额"), SqlStorageType.SqlDecimal);
+            header.AddChild("FSaleCardMoney", new LocaleValue("售卡金额"), SqlStorageType.SqlDecimal);
+            header.AddChild("FMoneyin", new LocaleValue("充值金额"), SqlStorageType.SqlDecimal);
+            header.AddChild("FModifyMoney", new LocaleValue("调整金额"), SqlStorageType.SqlDecimal);
+            //
+            header.AddChild("FConsumeMoney", new LocaleValue("消费金额"), SqlStorageType.SqlDecimal);
+            header.AddChild("FTranMoney", new Kingdee.BOS.LocaleValue("积分返利金额"), SqlStorageType.SqlDecimal).Width = 300;
+            header.AddChild("FBackCardMoney", new LocaleValue("退卡金额"), SqlStorageType.SqlDecimal);
+            header.AddChild("FOtherMoney", new LocaleValue("其他金额"), SqlStorageType.SqlDecimal);
+            header.AddChild("FEndMoney", new LocaleValue("结存金额"), SqlStorageType.SqlDecimal);
+            return header;
+        }
+
+        public override ReportTitles GetReportTitles(IRptParams filter)
+        {
+            ReportTitles titles = new ReportTitles();
+            string strTitle = string.Empty;
+            //if (this.filterSaleOrgList.Trim().Length > 0)
+            //{
+            //    titles.AddTitle("FSaleOrgTxt", this.OrgNameList(this.filterSaleOrgList));
+            //}
+            //else
+            //{
+            //    titles.AddTitle("FSaleOrgTxt", "全部");
+            //}
+            if (!string.IsNullOrWhiteSpace(filterDateFrom))
+            {
+                strTitle = string.Format("{0} - ", filterDateFrom);
+            }
+            if (!string.IsNullOrWhiteSpace(filterDateTo))
+            {
+                if (string.IsNullOrWhiteSpace(strTitle))
+                {
+                    strTitle = string.Format(" - {0}", filterDateTo);
+                }
+                else
+                {
+                    strTitle = string.Format("{0}{1}", strTitle, filterDateTo);
+                }
+            }
+            titles.AddTitle("FDateTxt", strTitle);
+            strTitle = string.Empty;
+            if (!string.IsNullOrWhiteSpace(filterCardType))
+            {
+                strTitle = string.Format("{0} ", filterCardType);
+            }
+            titles.AddTitle("FCardTypeTxt", strTitle);
+            strTitle = string.Empty;
+            if (!string.IsNullOrWhiteSpace(filterAccountType))
+            {
+                switch(filterAccountType)
+                {
+                    case "1":
+                        strTitle = "积分账户";
+                        break;
+                    case "2":
+                        strTitle = "储值账户";
+                        break;
+                    case "3":
+                        strTitle = "返利账户";
+                        break;
+                }
+            }
+            titles.AddTitle("FAccountTxt", strTitle);
+            strTitle = string.Empty;
+            return titles;
+        }
+
+        private void SetFilter(IRptParams filter)
+        {
+            DynamicObject customFilter = filter.FilterParameter.CustomFilter;
+            //this.filterSaleOrgList = this.GetDataByKey(customFilter, "FSaleOrgList");
+            this.filterDateFrom = this.GetDataByKey(customFilter, "FDateFrom");
+            this.filterDateTo = this.GetDataByKey(customFilter, "FDateTo");
+            this.filterCardType = this.GetBaseDataByKey(customFilter, "FCardType", "Number");
+            this.filterAccountType = this.GetDataByKey(customFilter, "FAccountType");
+
+        }
+
+        private string GetFilter()
+        {
+            StringBuilder sbFilter = new StringBuilder();
+            if (!string.IsNullOrWhiteSpace(this.filterDateFrom))
+            {
+                sbFilter.AppendLine(string.Format(" AND iva.FBizDate >=to_date('{0}','YYYY-MM-DD') ", this.filterDateFrom));
+            }
+            if (!string.IsNullOrWhiteSpace(this.filterDateTo))
+            {
+                sbFilter.AppendLine(string.Format(" AND iva.FBizDate < to_date('{0}','YYYY-MM-DD') ", Convert.ToDateTime(this.filterDateTo).AddDays(1).ToShortDateString()));
+            }
+            //if (!string.IsNullOrWhiteSpace(this.filterSaleOrgList))
+            //{
+            //    sbFilter.AppendLine(string.Format(" AND iva.FOrgId in ({0}) ", this.filterSaleOrgList));
+            //}
+            if (!string.IsNullOrWhiteSpace(this.filterCardType))
+            {
+                sbFilter.AppendLine(string.Format(" AND tctype.FNumber='{0}' ", this.filterCardType));
+            }
+            if (!string.IsNullOrWhiteSpace(this.filterAccountType))
+            {
+                sbFilter.AppendLine(string.Format(" AND iva.FAccountID = {0} ", Convert.ToInt64(this.filterAccountType)));
+            }
+            return sbFilter.ToString();
+        }
+
+        private string GetQCFilter()
+        {
+            StringBuilder sbFilter = new StringBuilder();
+            if (!string.IsNullOrWhiteSpace(this.filterDateFrom))
+            {
+                sbFilter.AppendLine(string.Format(" AND iva.FBizDate <'{0}'", Convert.ToDateTime(this.filterDateFrom).ToShortDateString()));
+            }
+            //if (!string.IsNullOrWhiteSpace(this.filterSaleOrgList))
+            //{
+            //    sbFilter.AppendLine(string.Format(" AND iva.FOrgId in ({0}) ", this.filterSaleOrgList));
+            //}
+            if (!string.IsNullOrWhiteSpace(this.filterCardType))
+            {
+                sbFilter.AppendLine(string.Format(" AND tctype.FNumber='{0}' ", this.filterCardType));
+            }
+            if (!string.IsNullOrWhiteSpace(this.filterAccountType))
+            {
+                sbFilter.AppendLine(string.Format(" AND iva.FAccountID = {0} ", Convert.ToInt64(this.filterAccountType)));
+            }
+            return sbFilter.ToString();
+        }
+
+        private void BuildTmpData(string firstTableName)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendFormat("Create table {0}(",firstTableName).AppendLine();
+            sb.AppendLine(@"FDateBusiness VARCHAR(10),  
+                            FDaysActAmt DECIMAL(23,10)  DEFAULT 0,  
+                            FDaysIniAmt DECIMAL(23,10)  DEFAULT 0 ");
+            sb.AppendLine(")");
+            DBUtils.ExecuteDynamicObject(this.Context, sb.ToString());
+            sb.Clear();
+            string str4 = Guid.NewGuid().ToString("N").Substring(0, 0x16);
+            string strSQL = string.Format(" CREATE INDEX IDX_MAT{0} ON {1} ({2}) ", str4, firstTableName, "FDateBusiness");
+            DBUtils.Execute(this.Context, strSQL);
+
+            List<SqlObject> lstSql = new List<SqlObject>();
+            SqlObject sqlObj;
+            DateTime dtFrom = Convert.ToDateTime(filterDateFrom);
+            DateTime dtTo = Convert.ToDateTime(filterDateTo).AddDays(1);
+            while (dtFrom < dtTo)
+            {
+                sqlObj = new SqlObject(string.Format(@"INSERT INTO {0}(FDateBusiness) VALUES (to_char(@FDateBusiness,'YYYY-MM-DD')) ", firstTableName), 
+                    new Kingdee.BOS.SqlParam("@FDateBusiness", Kingdee.BOS.KDDbType.DateTime, dtFrom.ToShortDateString().Replace("/", "-")));
+                lstSql.Add(sqlObj);
+                dtFrom = dtFrom.AddDays(1);
+            }
+            DBUtils.ExecuteBatch(this.Context, lstSql);
+            lstSql.Clear();
+        }
+
+        private void BuildSencondData(string secondTableName, string sqlWhere)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendFormat("Create table {0}(", secondTableName).AppendLine();
+            sb.AppendLine(@"FID bigint default 0, 
+                            FCardID INT, 
+                            FAccountID INT, 
+                            FAmt decimal(23,10),
+                            FDateBusiness varchar(10),
+                            FType varchar(2), 
+                            FCardStatus varchar(2) ");
+            sb.AppendLine(")");
+            DBUtils.ExecuteDynamicObject(this.Context, sb.ToString());
+            sb.Clear();
+            string str4 = Guid.NewGuid().ToString("N").Substring(0, 0x16);
+            string strSQL = string.Format(" CREATE INDEX IDX_MAT{0} ON {1} ({2}) ", str4, secondTableName, "FDateBusiness");
+            DBUtils.Execute(this.Context, strSQL);
+            sb.AppendFormat("INSERT INTO {0}(FID, FCardID, FAccountID, FAmt, FDateBusiness, FType, FCardStatus) ", secondTableName).AppendLine();
+            sb.AppendFormat(@"
+                select distinct iva.FID, iva.FCardID, iva.FAccountID, 
+                    CASE WHEN iva.FOperationType = '01' THEN iva.FBalance ELSE (case when iva.FOption = '1' then 1 else -1 end * iva.FOperValue) END, 
+                    to_char(iva.FBizDate,'YYYY-MM-DD'), iva.FOperationType, tcard.FCARDSTATUS
+                from CMK_VIP_T_CardAction iva 
+                    inner join CMK_T_VIP_CARD tcard on iva.FCardID = tcard.FCardID 
+                    left join CMK_T_VIP_CARDTYPE tctype on tcard.FCardTypeID = tctype.FCardTypeID 
+                    left join CMK_T_VIP_CARDACCT tacct on iva.FAccountID=tacct.FCardAcctID  ").AppendLine();
+            sb.AppendFormat("Where iva.FAccountID in (1, 2, 3) {0}", sqlWhere).AppendLine();
+
+            DBUtils.ExecuteDynamicObject(this.Context, sb.ToString());
+            sb.Clear();
+        }
+
+        private void BuildFinalData(string finalTableName, string tmpTableName,string secondTableName, string sqlQCWhere)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendFormat("CREATE TABLE {0}(", finalTableName).AppendLine();
+            sb.AppendLine(@"
+                            FDateBusiness VARCHAR(10),                  --业务日期    
+                            FStartMoney DECIMAL(23,10)  DEFAULT(0),     --期初金额  
+                            FInitCardMoney DECIMAL(23,10)  DEFAULT(0),  --初始导入金额  
+                            FMakeCardMoney DECIMAL(23,10)  DEFAULT(0),  --未发行金额 
+                            FSaleCardMoney DECIMAL(23,10)  DEFAULT(0),  --售卡金额    
+                            FMoneyin DECIMAL(23,10)   DEFAULT(0),       --充值金额    
+                            FModifyMoney DECIMAL(23,10)   DEFAULT(0),   --调整金额    
+                            FConsumeMoney DECIMAL(23,10)  DEFAULT(0),   --消费金额    
+                            FTranMoney DECIMAL(23,10)   DEFAULT(0),     --积分返利金额   
+                            FBackCardMoney DECIMAL(23,10)   DEFAULT(0), --退卡金额    
+                            FOtherMoney DECIMAL(23,10)   DEFAULT(0),    --其他调整金额
+                            FEndMoney DECIMAL(23,10)   DEFAULT(0),      --结存金额    
+                            FSumSort INT  DEFAULT(0) 
+                            )");
+            DBUtils.ExecuteDynamicObject(this.Context, sb.ToString());
+
+            sb.Clear();
+            string str4 = Guid.NewGuid().ToString("N").Substring(0, 0x16);
+            string strSQL = string.Format(" CREATE INDEX IDX_MAT{0} ON {1} ({2}) ", str4, finalTableName, "FDateBusiness");
+            DBUtils.Execute(this.Context, strSQL);
+            sb.AppendFormat(@"INSERT INTO {0}(FDateBusiness, FStartMoney, FInitCardMoney, FSaleCardMoney,FMoneyin,FModifyMoney,FConsumeMoney,
+                                  FTranMoney,FBackCardMoney,FOtherMoney,FEndMoney)", finalTableName).AppendLine();
+            sb.AppendLine(@"SELECT b.FDateBusiness, 0, 
+                                ISNULL(SUM(CASE WHEN f9.Ftype = '00'  THEN f9.FAmt ELSE 0 END), 0), 
+                                ISNULL(SUM(CASE WHEN f9.Ftype = '02'  THEN f9.FAmt ELSE 0 END), 0), 
+                                ISNULL(SUM(CASE WHEN f9.Ftype = '04' THEN f9.FAmt ELSE 0 END), 0), 
+                                ISNULL(SUM(CASE WHEN f9.Ftype = '08'  THEN f9.FAmt ELSE 0 END), 0), 
+                                ISNULL(SUM(CASE WHEN f9.Ftype = '03'  THEN f9.FAmt ELSE 0 END), 0), 
+                                ISNULL(SUM(CASE WHEN f9.Ftype = '05' THEN f9.FAmt ELSE 0 END), 0), 
+                                ISNULL(SUM(CASE WHEN f9.Ftype = '19'  THEN f9.FAmt ELSE 0 END), 0), 
+                                ISNULL(SUM(CASE WHEN f9.Ftype NOT IN('00', '01', '02', '04', '08', '03', '05','19') THEN f9.FAmt ELSE 0 END), 0),0 ");
+            sb.AppendFormat("from {0} b ",tmpTableName).AppendLine();
+            sb.AppendFormat(@"LEFT JOIN (SELECT SUM(FAmt) AS FAmt, to_char(FDateBusiness, 'YYYY-MM-DD') AS FDateBusiness, FType, FCardStatus 
+                                FROM {0} GROUP BY to_char(FDateBusiness,'YYYY-MM-DD'), FType, FCardStatus) f9 ON b.FDateBusiness = f9.FDateBusiness 
+                                    GROUP BY b.FDateBusiness", secondTableName).AppendLine();
+            DBUtils.ExecuteDynamicObject(this.Context, sb.ToString());
+
+            //开始日期期初
+            sb.Clear();
+            sb.AppendFormat(@"/*dialect*/ 
+                UPDATE t1 SET t1.FStartMoney = ISNULL(t2.FBalance, 0) FROM {0} t1 
+                    LEFT JOIN (SELECT SUM(FBalance) AS FBalance FROM CMK_VIP_T_CardAction WHERE FID IN 
+                                (SELECT MAX(iva.FID) from CMK_VIP_T_CardAction iva 
+                                     inner join CMK_T_VIP_CARD tcard on iva.FCardID=tcard.FCardID 
+                                     left join CMK_T_VIP_CARDTYPE tctype on tcard.FCardTypeID=tctype.FCardTypeID
+                                 WHERE iva.FAccountID IN (1, 2, 3) AND iva.FOperationType <> '01' AND iva.FOperValue > 0 {1} 
+                                 GROUP BY tcard.FNumber)
+                        ) t2 ON 1 = 1 ", finalTableName, sqlQCWhere).AppendLine();
+            DBUtils.ExecuteDynamicObject(this.Context, sb.ToString()); 
+
+            //计算每日导入、发生额
+            sb.Clear();
+            sb.AppendFormat(@"/*dialect*/ 
+                UPDATE t1 SET t1.FDaysActAmt = ISNULL(t2.FDaysActAmt, 0), 
+                    t1.FDaysIniAmt = ISNULL(t2.FDaysIniAmt, 0) FROM {0} t1 
+                LEFT JOIN (SELECT tt1.FDateBusiness, SUM(tt2.FSaleCardMoney + tt2.FmoneyIn + tt2.FModifyMoney + tt2.FConSUMeMoney + tt2.FTranMoney + tt2.FBackCardMoney + tt2.FOtherMoney) AS FDaysActAmt,  
+                               SUM(tt2.FInitCardMoney) AS FDaysIniAmt FROM {0} tt1 LEFT JOIN {1} tt2 ON tt1.FDateBusiness >= tt2.FDateBusiness GROUP BY tt1.FDateBusiness
+                        ) t2 ON t1.FDateBusiness = t2.FDateBusiness ", tmpTableName, finalTableName).AppendLine();
+            DBUtils.ExecuteDynamicObject(this.Context, sb.ToString());
+
+            //每日导入
+            sb.Clear();
+            sb.AppendFormat(@"/*dialect*/ 
+                UPDATE t1 SET t1.FStartMoney = t1.FStartMoney + ISNULL(t2.FDaysIniAmt, 0) 
+                    FROM {0} t1 LEFT JOIN {1} t2 ON t1.FDateBusiness = t2.FDateBusiness ", finalTableName, tmpTableName);
+            DBUtils.ExecuteDynamicObject(this.Context, sb.ToString());
+
+            //每日结存
+            sb.Clear();
+            sb.AppendFormat(@"/*dialect*/ 
+                UPDATE t1 SET t1.FEndMoney = t1.FStartMoney + ISNULL(t2.FDaysActAmt, 0) 
+                    FROM {0} t1 LEFT JOIN {1} t2 ON t1.FDateBusiness = t2.FDateBusiness ", finalTableName, tmpTableName);
+            DBUtils.ExecuteDynamicObject(this.Context, sb.ToString());
+
+            //每日期初
+            sb.Clear();
+            sb.AppendFormat(@"/*dialect*/ 
+                UPDATE t1 SET t1.FStartMoney = t1.FStartMoney + ISNULL(t2.FDaysActAmt, 0) 
+                    FROM {0} t1 LEFT JOIN {1} t2 ON t1.FDateBusiness = DATEADD(DAY, 1, t2.FDateBusiness)", finalTableName, tmpTableName).AppendLine();
+            DBUtils.ExecuteDynamicObject(this.Context, sb.ToString());
+
+            //每日未发行金额
+            sb.Clear();
+            sb.AppendFormat(@"/*dialect*/ 
+                UPDATE t1 SET t1.FMakeCardMoney = ISNULL(t2.FMakeCardMoney, 0) FROM {0} t1 
+                LEFT JOIN (SELECT tt3.FDateBusiness, SUM(tt2.FVALUE) AS FMakeCardMoney FROM CMK_T_VIP_CARD tt1 
+                               INNER JOIN CMK_T_VIP_CARDACCTS tt2 ON tt1.FCardID = tt2.FCardID AND tt1.FDOCUMENTSTATUS = 'C' AND tt1.FCARDSTATUS = 'E' AND tt2.FACCOUNTID IN (1, 2, 3)
+                               INNER JOIN {1} tt3 ON tt1.FCardID = tt3.FCardID AND tt2.FAccountID = tt3.FAccountID AND tt3.FType = '01' AND tt3.FCardStatus = 'E' AND tt3.FDateBusiness >= CONVERT(VARCHAR(10), ISNULL(tt1.FCHECKDATE, ''), 121)
+                           GROUP BY tt3.FDateBusiness
+                        ) t2 ON t1.FDateBusiness = t2.FDateBusiness ", finalTableName, secondTableName).AppendLine();
+            DBUtils.ExecuteDynamicObject(this.Context, sb.ToString());
+        }
+
+        //private string OrgNameList(string idList)
+        //{
+        //    string str = string.Empty;
+        //    if (idList.Trim().Length > 0)
+        //    {
+
+        //        QueryBuilderParemeter parameter2 = new QueryBuilderParemeter
+        //        {
+        //            FormId = "ORG_Organizations",
+        //            SelectItems = SelectorItemInfo.CreateItems("FNAME,FORGID"),
+        //            FilterClauseWihtKey = string.Format(" FORGID in ({0}) AND FLOCALEID=@FLocalId", idList)
+        //        };
+        //        var queryCollection = Kingdee.BOS.Contracts.ServiceFactory.GetService<IQueryService>(this.Context).GetDynamicObjectCollection(this.Context, parameter2, new List<SqlParam> { 
+        //           new SqlParam("@FLocalId",KDDbType.Int32,this.Context.UserLocale.LCID)
+        //        });
+        //        foreach (DynamicObject obj2 in queryCollection)
+        //        {
+        //            str = str + obj2["FNAME"].ToString() + "; ";
+        //        }
+        //        if (str.Length > 0)
+        //        {
+        //            str = str.Substring(0, str.Length - 1);
+        //        }
+        //    }
+        //    return str;
+        //}
+        protected string GetBaseDataByKey(DynamicObject dy, string key, string item)
+        {
+            string str = string.Empty;
+            if (((dy != null) && (dy[key] != null)) && !string.IsNullOrWhiteSpace(((DynamicObject)dy[key])[item].ToString()))
+            {
+                str = ((DynamicObject)dy[key])[item].ToString();
+            }
+            return str;
+        }
+        protected string GetDataByKey(DynamicObject dy, string key)
+        {
+            string str = string.Empty;
+            if (((dy != null) && (dy[key] != null)) && !string.IsNullOrWhiteSpace(dy[key].ToString()))
+            {
+                str = dy[key].ToString();
+            }
+            return str;
+        }
+
+    }
+}
