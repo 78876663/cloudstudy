@@ -93,4 +93,85 @@ namespace CMK.K3.RI.VIP.Business.PlugIn.RptFilter
                 this.View.Model.SetValue("FSaleOrgList", organization.FirstOrDefault().Value);
             }
         }
+
+        public override void DataChanged(DataChangedEventArgs e)
+        {
+		//根据选择的销售组织，来设置对应的隶属组织
+            string strSaleOrg = string.Empty;
+            string str = e.Field.Key.ToUpperInvariant();
+
+            if (str == null) return;
+            if (str != "FSALEORGLIST" && str != "FBEGINDATE" && str != "FENDDATE" ) return;
+
+            if (str == "FSALEORGLIST")
+            {
+                strSaleOrg = Convert.ToString(this.View.Model.GetValue("FSaleOrgList"));
+                DynamicObject obj = this.View.Model.GetValue("FOrgAffiliation") as DynamicObject;
+                long affiliationId = (obj == null) ? 0L : Convert.ToInt64(obj["Id"]);
+
+                if ((strSaleOrg.Length > 0) && (strSaleOrg.IndexOf(',') < 0))
+                {
+                    long orgId = Convert.ToInt64(strSaleOrg);
+                    List<long> list = new List<long>();
+                    if (affiliationId > 0L)
+                    {
+                        list = OrganizationServiceHelper.GetOrgsInAffiliation(base.Context, orgId, affiliationId);
+                    }
+                    if (!list.Contains(orgId))
+                    {
+                        this.View.Model.SetValue("FOrgAffiliation", null);
+                    }
+                    if (base.Context.IsMultiOrg)
+                    {
+                        this.View.StyleManager.SetEnabled("FOrgAffiliation", "", true);
+                    }
+                }
+                else
+                {
+                    this.View.Model.SetValue("FOrgAffiliation", null);
+                    this.View.StyleManager.SetEnabled("FOrgAffiliation", "", false);
+                }
+                return;
+            }
+
+            
+          
+        }
+
+ public override void BeforeF7Select(BeforeF7SelectEventArgs e)
+        {
+//在选择基础资料前应该先设置销售门店
+            string strFilter = string.Empty;
+            string strSaleOrg = Convert.ToString(this.View.Model.GetValue("FSaleOrgList"));
+
+            if (string.IsNullOrWhiteSpace(strSaleOrg))
+            {
+                this.View.ShowMessage(ResManager.LoadKDString("请先选择销售门店！", "004104030002440", SubSystemType.SCM, new object[0]), MessageBoxType.Notice);
+                e.Cancel = true;
+                return;
+            }
+
+            switch (e.FieldKey.ToUpperInvariant())
+            {
+                case "FBEGINITEM":
+                case "FENDITEM":
+                    ListShowParameter dynamicFormShowParameter = (ListShowParameter)e.DynamicFormShowParameter;
+                    dynamicFormShowParameter.MutilListUseOrgId = strSaleOrg;
+                    break;
+                case "FORGAFFILIATION":
+                    strFilter = string.Format(" FTYPE = 101 AND ( FROOTORGID = {0} OR FAFFILIATIONID IN ( SELECT DISTINCT FAFFILIATIONID FROM T_ORG_AFFILIATIONENTRY WHERE FORGID = {0} )) ", strSaleOrg);
+                    if (string.IsNullOrEmpty(e.ListFilterParameter.Filter))
+                    {
+                        e.ListFilterParameter.Filter = strFilter;
+                    }
+                    else
+                    {
+                        IRegularFilterParameter listFilterParameter = e.ListFilterParameter;
+                        listFilterParameter.Filter = listFilterParameter.Filter + " AND " + strFilter;
+                    }
+                    break;
+                default:
+                    return;
+            }
+        }
 }

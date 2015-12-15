@@ -81,7 +81,9 @@ namespace CMK.K3.RI.VIP.App.Service.PlugIn.Report
             header.AddChild("FBackCardMoney", new LocaleValue("退卡金额"), SqlStorageType.SqlDecimal);
             header.AddChild("FOtherMoney", new LocaleValue("其他金额"), SqlStorageType.SqlDecimal);
             header.AddChild("FEndMoney", new LocaleValue("结存金额"), SqlStorageType.SqlDecimal);
-            return header;
+ 		header.AddChild(string.Format("F{0}Count", Convert.ToString(doPayMode["FPaidNumber"])), new LocaleValue(string.Format("{0}&交易笔数", Convert.ToString		(doPayMode["FPaidName"]))), SqlStorageType.SqlInt);
+		//现金&交易笔数  显示两行头部          
+return header;
         }
 
         public override ReportTitles GetReportTitles(IRptParams filter)
@@ -151,7 +153,7 @@ namespace CMK.K3.RI.VIP.App.Service.PlugIn.Report
         }
 
         private string GetFilter()
-        {
+        {//拼接sql_where子句
             StringBuilder sbFilter = new StringBuilder();
             if (!string.IsNullOrWhiteSpace(this.filterDateFrom))
             {
